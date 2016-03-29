@@ -42,6 +42,8 @@ namespace TFSProjectMigration
         public TestPlanViewUI()
         {
             InitializeComponent();
+
+            this.DataContext = new MigrationViewModel();
         }
 
         public void printProjectName()
