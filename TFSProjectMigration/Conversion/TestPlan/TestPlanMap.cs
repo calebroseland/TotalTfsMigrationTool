@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace TFSProjectMigration.Conversion.TestPlan
 {
-   class TestPlanMap
+   class TestPlanIdMap
    {
       public Dictionary<int, int> mapping = new Dictionary<int, int>();
 

@@ -8,18 +8,18 @@ using System.Threading.Tasks;
 
 namespace TFSProjectMigration.Conversion.Users
 {
-    public class UserMigration
+    public class UserMapper
     {
         public TfsProject SourceProject { get; set; }
         public TfsProject TargetProject { get; set; }
 
-        public UserMigration(TfsProject SourceProject, TfsProject TargetProject)
+        public UserMapper(TfsProject SourceProject, TfsProject TargetProject)
         {
             this.SourceProject = SourceProject;
             this.TargetProject = TargetProject;
         }
 
-        public void MapUserIds()
+        public UserMap MapUserIds()
         {
             var sourceUserIds = GetUsers(SourceProject);
             var allUsers = GetUsers(TargetProject);
@@ -37,6 +37,8 @@ namespace TFSProjectMigration.Conversion.Users
                     UsersMap[user.DisplayName] = identities[0].DisplayName;
                 }
             }
+
+            return UsersMap;
         }
 
         public UserMap UsersMap { get; set; } = new UserMap();
@@ -95,8 +97,11 @@ namespace TFSProjectMigration.Conversion.Users
         }
     }
 
-    public class UserMap: Dictionary<string, string>
+    public class UserMap : Dictionary<string, string>
     {
-
+        internal bool TryGetValue(string value, out object user)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

@@ -12,6 +12,8 @@ using log4net.Config;
 using log4net;
 using System.Windows.Controls;
 using TFSProjectMigration.Conversion.WorkItems;
+using TFSProjectMigration.Conversion.Users;
+using TFSProjectMigration.Conversion.TestPlan;
 
 namespace TFSProjectMigration
 {
@@ -19,16 +21,20 @@ namespace TFSProjectMigration
     {
         ITestManagementTeamProject sourceproj;
         ITestManagementTeamProject destinationproj;
-        public WorkItemIdMap workItemMap;
+        public WorkItemIdMap WorkItemIdMap { get; set; }
         String projectName;
         private static readonly ILog logger = LogManager.GetLogger(typeof(TFSWorkItemMigrationUI));
+        internal UserMap UserMapping { get; set; }
 
-        public TestPlanMigration(TfsTeamProjectCollection sourceTfs, TfsTeamProjectCollection destinationTfs, string sourceProject, string destinationProject, WorkItemIdMap workItemMap)
+        public UserMap UsersMap { get; internal set; }
+        internal TestPlanIdMap TestPlanIdMap { get; set; }
+
+        public TestPlanMigration(TfsProject sourceTfs, TfsProject targetTfs)
         {
-            this.sourceproj = GetProject(sourceTfs, sourceProject);
-            this.destinationproj = GetProject(destinationTfs, destinationProject);
-            this.workItemMap = workItemMap;
-            projectName = sourceProject;
+            this.sourceproj = GetProject(sourceTfs.collection, sourceTfs.project.Name);
+            this.destinationproj = GetProject(targetTfs.collection, targetTfs.project.Name);
+            
+            projectName = sourceTfs.project.Name;
         }
 
         private ITestManagementTeamProject GetProject(TfsTeamProjectCollection tfs, string project)
@@ -140,12 +146,12 @@ namespace TFSProjectMigration
             {
                 try
                 {   //check whether testcase exists in new work items(closed work items may not be created again).
-                    if (!workItemMap.Contains(testcase.TestCase.WorkItem.Id))
+                    if (!WorkItemIdMap.Contains(testcase.TestCase.WorkItem.Id))
                     {
                         continue;
                     }
 
-                    int newWorkItemID = (int)workItemMap[testcase.TestCase.WorkItem.Id];
+                    int newWorkItemID = (int)WorkItemIdMap[testcase.TestCase.WorkItem.Id];
                     ITestCase tc = destinationproj.TestCases.Find(newWorkItemID);
                     destinationsuite.Entries.Add(tc);
 
@@ -157,7 +163,7 @@ namespace TFSProjectMigration
                         if (sharedStepRef != null)
                         {
 
-                            int newSharedStepId = (int)workItemMap[sharedStepRef.SharedStepId];
+                            int newSharedStepId = (int)WorkItemIdMap[sharedStepRef.SharedStepId];
                             //GetNewSharedStepId(testCase.Id, sharedStepRef.SharedStepId);
                             if (0 != newSharedStepId)
                             {

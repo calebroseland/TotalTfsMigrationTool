@@ -311,7 +311,7 @@
     <Compile Include="Conversion\TeamQueries\TeamQueryReader.cs" />
     <Compile Include="Conversion\TeamQueries\TeamQueryWriter.cs" />
     <Compile Include="Conversion\TestPlan\TestPlanMap.cs" />
-    <Compile Include="Conversion\Users\UserMigration.cs" />
+    <Compile Include="Conversion\UserMapper.cs" />
     <Compile Include="Conversion\WorkItems\WorkItemIdMap.cs" />
     <Compile Include="Conversion\WorkItems\WorkItemTypeMap.cs" />
     <Compile Include="ImageHelpers.cs" />
@@ -325,8 +325,7 @@
     <Compile Include="TFSWorkItemMigrationUI.xaml.cs">
       <DependentUpon>TFSWorkItemMigrationUI.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Conversion\WorkItems\WorkItemRead.cs" />
-    <Compile Include="Conversion\WorkItems\WorkItemWrite.cs" />
+    <Compile Include="Conversion\WorkItems\WorkItemMigration.cs" />
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>

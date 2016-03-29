@@ -11,6 +11,7 @@ using TFSProjectMigration.Conversion.TeamQueries;
 using TFSProjectMigration.ProjectStructure;
 using TFSProjectMigration.Conversion.WorkItems;
 using TFSProjectMigration.Conversion.Users;
+using TFSProjectMigration.Conversion.TestPlan;
 
 namespace TFSProjectMigration.Conversion
 {
@@ -22,56 +23,68 @@ namespace TFSProjectMigration.Conversion
         private TfsProject sourceTFS;
         private TfsProject targetTFS;
 
-
-
         public void StartMigration(bool isNotIncludeClosed, bool isNotIncludeRemoved, WorkItemTypeMap witMap)
         {
-            var workItemRead = new WorkItemRead(sourceTFS.collection, sourceTFS.project);
-            var workItemWrite = new WorkItemWrite(targetTFS.collection, targetTFS.project);
+            var workItemIdMap = new WorkItemIdMap();
+            var testPlanIdMap = new TestPlanIdMap();
 
-            var areasAndIterationsReader = new AreasAndIterationReader(sourceTFS.collection, sourceTFS.project.Name);
-            var areasAndIterationsWriter = new AreasAndIterationsWriter(targetTFS.collection, targetTFS.project.Name);
-
-
-            var teamQueryReader = new TeamQueryReader(sourceTFS.collection, sourceTFS.project);
-            var teamQueryWriter = new TeamQueryWriter(targetTFS.collection, targetTFS.project);
-
-            
             WorkItemIdMap wiMap = new WorkItemIdMap();
             logger.InfoFormat("--------------------------------Migration from '{0}' to '{1}' Start----------------------------------------------", sourceTFS.project.Name, targetTFS.project.Name);
 
-
-            WorkItemCollection source = workItemRead.GetWorkItems(sourceTFS.project.Name, isNotIncludeClosed, isNotIncludeRemoved); //Get Workitems from source tfs 
-            XmlNode[] iterations = areasAndIterationsReader.PopulateIterations(); //Get Iterations and Areas from source tfs 
+            Log("Generating Areas & Iterations...");
+            SetupAreasAndIterations();
 
             Log("Mapping users...");
-            var userMigration = new UserMigration(sourceTFS, targetTFS);
-            userMigration.MapUserIds();
+            UserMap userMap = GetUserMap();
 
+            Log("Copying Team Queries...");
+            CopyTeamQueries();
 
-            Log("Generating Areas...");
-            var areaIdMap = areasAndIterationsWriter.GenerateAreas(iterations[0], sourceTFS.project.Name); //Copy Areas
+            Log("Copying Work Items...");
+            WorkItemMigration mig = new WorkItemMigration(sourceTFS, targetTFS);
+            mig.WorkitemTemplateMap = witMap;
+            mig.UsersMap = userMap;
+            mig.WorkItemIdMap = workItemIdMap;
+            mig.CopyWorkItems(isNotIncludeClosed, isNotIncludeRemoved);
 
-            Log("\nGenerating Iterations...");
-            var iterationsIdMap = areasAndIterationsWriter.GenerateIterations(iterations[1], sourceTFS.project.Name); //Copy Iterations
-
-            Log("\nCopying Team Queries...");
-            teamQueryWriter.SetTeamQueries(teamQueryReader.queryCol, sourceTFS.project.Name); //Copy Queries
-
-            Log("\nCopying Work Items...");
-            var sourceStore = (WorkItemStore)sourceTFS.collection.GetService(typeof(WorkItemStore));
-            workItemWrite.writeWorkItems(sourceStore, source, sourceTFS.project.Name, witMap); //Copy Workitems
-
-            Log("\nCopying Test Plans...");
-
-            TestPlanMigration tcm = new TestPlanMigration(sourceTFS.collection, targetTFS.collection, sourceTFS.project.Name, targetTFS.project.Name, workItemWrite.WorkItemIdMap);
-            tcm.CopyTestPlans(); //Copy Test Plans
-
+            Log("Copying Test Plans...");
+            TestPlanMigration tcm = new TestPlanMigration(sourceTFS, targetTFS);
+            tcm.UsersMap = userMap;
+            tcm.WorkItemIdMap = workItemIdMap;
+            tcm.TestPlanIdMap = testPlanIdMap;
+            tcm.CopyTestPlans();
+            
             Log("Project Migrated");
             logger.Info("--------------------------------Migration END----------------------------------------------");
         }
 
-      public MigrateProject(TfsProject sourceTFS, TfsProject targetTFS)
+        private void CopyTeamQueries()
+        {
+            var teamQueryReader = new TeamQueryReader(sourceTFS.collection, sourceTFS.project);
+            var teamQueryWriter = new TeamQueryWriter(targetTFS.collection, targetTFS.project);
+
+            teamQueryWriter.SetTeamQueries(teamQueryReader.queryCol, sourceTFS.project.Name); //Copy Queries
+        }
+
+        private UserMap GetUserMap()
+        {
+            var userMigration = new UserMapper(sourceTFS, targetTFS);
+            var userMap = userMigration.MapUserIds();
+            return userMap;
+        }
+
+        private void SetupAreasAndIterations()
+        {
+            var areasAndIterationsReader = new AreasAndIterationReader(sourceTFS.collection, sourceTFS.project.Name);
+            XmlNode[] iterations = areasAndIterationsReader.PopulateIterations(); //Get Iterations and Areas from source tfs 
+
+            var areasAndIterationsWriter = new AreasAndIterationsWriter(targetTFS.collection, targetTFS.project.Name);
+            var areaIdMap = areasAndIterationsWriter.GenerateAreas(iterations[0], sourceTFS.project.Name); //Copy Areas
+            var iterationsIdMap = areasAndIterationsWriter.GenerateIterations(iterations[1], sourceTFS.project.Name); //Copy Iterations
+        }
+
+
+        public MigrateProject(TfsProject sourceTFS, TfsProject targetTFS)
       {
          this.sourceTFS = sourceTFS;
          this.targetTFS = targetTFS;                 
