@@ -3,15 +3,16 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace TFSProjectMigration.Conversion.Users
 {
     public class UserMapper
     {
-        public TfsProject SourceProject { get; set; }
-        public TfsProject TargetProject { get; set; }
+        private TfsProject SourceProject;
+        private TfsProject TargetProject;
+
+        public UserMap UsersMap { get; set; } = new UserMap();
+
 
         public UserMapper(TfsProject SourceProject, TfsProject TargetProject)
         {
@@ -21,36 +22,41 @@ namespace TFSProjectMigration.Conversion.Users
 
         public UserMap MapUserIds()
         {
-            var sourceUserIds = GetUsers(SourceProject);
-            var allUsers = GetUsers(TargetProject);
-            var targetUserIds = allUsers.Where(a=> a != null && a.AccountName != null).GroupBy(a=> a.AccountName).ToDictionary(a=> a.Key, a => a.ToList());
-           
-            foreach (Identity user in sourceUserIds)
+            var sourceUsers = GetUsers(SourceProject);
+            var targetUsers = GetUsers(TargetProject);
+
+            UsersMap.SourceNames = sourceUsers.Select(a => a.DisplayName).ToList();
+            UsersMap.TargetNames = targetUsers.Select(a => a.DisplayName).ToList();
+
+            var targetUsersByMailAddress = targetUsers.Where(a => a != null && a.AccountName != null).GroupBy(a => a.MailAddress).ToDictionary(a => a.Key, a => a.ToList());
+            var targetUsersByDisplayName = targetUsers.Where(a => a != null && a.AccountName != null).GroupBy(a => a.DisplayName).ToDictionary(a => a.Key, a => a.ToList());
+            foreach (Identity user in sourceUsers)
             {
                 List<Identity> identities;
-                if (targetUserIds.TryGetValue(user.AccountName, out identities))
+                if (targetUsersByDisplayName.TryGetValue(user.DisplayName, out identities))
                 {
-                    UsersMap[user.DisplayName] = identities[0].DisplayName;
+                    UsersMap.Map(user.DisplayName, identities[0].DisplayName);
                 }
-                else if (targetUserIds.TryGetValue(user.MailAddress, out identities))
+                else if (targetUsersByMailAddress.TryGetValue(user.MailAddress, out identities))
                 {
-                    UsersMap[user.DisplayName] = identities[0].DisplayName;
+                    UsersMap.Map(user.DisplayName, identities[0].DisplayName);
+                }
+                else if (targetUsersByMailAddress.TryGetValue(user.DistinguishedName, out identities))
+                {
+                    UsersMap.Map(user.DisplayName, identities[0].DisplayName);
                 }
             }
 
             return UsersMap;
         }
 
-        public UserMap UsersMap { get; set; } = new UserMap();
-
+        
         private static IEnumerable<Identity> GetUsers(TfsProject SourceProject)
         {
             HashSet<Identity> users = new HashSet<Identity>();
             Queue<Identity> queuedItems = new Queue<Identity>();
-
             IGroupSecurityService gss = SourceProject.collection.GetService<IGroupSecurityService>();
             Identity SIDS = gss.ReadIdentity(SearchFactor.AccountName, "Project Collection Valid Users", QueryMembership.Expanded);
-
             Identity[] sourceUserIds = gss.ReadIdentities(SearchFactor.Sid, SIDS.Members, QueryMembership.Direct);
             foreach (var item in sourceUserIds)
             {
@@ -65,24 +71,20 @@ namespace TFSProjectMigration.Conversion.Users
                 var firstSid = queuedItems.Dequeue();
                 if (firstSid == null)
                     continue;
-
                 try
                 {
                     users.Add(firstSid);
                     if (firstSid.Members.Length == 0)
                         continue;
-
                     Identity[] members = gss.ReadIdentities(SearchFactor.Sid, firstSid.Members, QueryMembership.Direct);
                     foreach (var item in members)
                     {
                         if (item == null)
                             continue;
-
                         if (users.Add(item))
                         {
                             if (item.Type == IdentityType.WindowsUser)
                                 continue;
-
                             queuedItems.Enqueue(item);
                         }
                     }
@@ -94,14 +96,6 @@ namespace TFSProjectMigration.Conversion.Users
             }
 
             return users;
-        }
-    }
-
-    public class UserMap : Dictionary<string, string>
-    {
-        internal bool TryGetValue(string value, out object user)
-        {
-            throw new NotImplementedException();
         }
     }
 }

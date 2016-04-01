@@ -42,6 +42,7 @@ namespace TFSProjectMigration
             XmlConfigurator.Configure();
 
          this.DataContext = new MigrationViewModel();
+
          //MigrateProject mp = new MigrateProject(SourceProject.collection, TargetProject.collection, SourceProject.project, TargetProject.project);
          ((MigrationViewModel)DataContext).Log += (logMessage) =>
          {

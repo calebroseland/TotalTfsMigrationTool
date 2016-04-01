@@ -19,37 +19,47 @@ namespace TFSProjectMigration.Conversion
     {
         private static readonly ILog logger = LogManager.GetLogger(typeof(MigrateProject));
 
+        public WorkItemIdMap workItemIdMap;
+        public TestPlanIdMap testPlanIdMap;
+        public WorkItemTypeMap FieldMap;
+
+
         public Action<string> Log = (s) => { };
         private TfsProject sourceTFS;
         private TfsProject targetTFS;
+        internal UserMap Usermap;
 
-        public void StartMigration(bool isNotIncludeClosed, bool isNotIncludeRemoved, WorkItemTypeMap witMap)
+        public void StartMigration(bool isNotIncludeClosed, bool isNotIncludeRemoved)
         {
-            var workItemIdMap = new WorkItemIdMap();
-            var testPlanIdMap = new TestPlanIdMap();
+            if (workItemIdMap == null)
+                throw new InvalidFieldValueException(nameof(workItemIdMap) + " is not set");
 
-            WorkItemIdMap wiMap = new WorkItemIdMap();
+            if (testPlanIdMap == null)
+                throw new InvalidFieldValueException(nameof(testPlanIdMap) + " is not set");
+
+            if (FieldMap == null)
+                throw new InvalidFieldValueException(nameof(FieldMap) + " is not set");
+
+
             logger.InfoFormat("--------------------------------Migration from '{0}' to '{1}' Start----------------------------------------------", sourceTFS.project.Name, targetTFS.project.Name);
 
             Log("Generating Areas & Iterations...");
             SetupAreasAndIterations();
 
-            Log("Mapping users...");
-            UserMap userMap = GetUserMap();
 
             Log("Copying Team Queries...");
             CopyTeamQueries();
 
             Log("Copying Work Items...");
             WorkItemMigration mig = new WorkItemMigration(sourceTFS, targetTFS);
-            mig.WorkitemTemplateMap = witMap;
-            mig.UsersMap = userMap;
+            mig.WorkitemTemplateMap = FieldMap;
+            mig.UsersMap = Usermap;
             mig.WorkItemIdMap = workItemIdMap;
             mig.CopyWorkItems(isNotIncludeClosed, isNotIncludeRemoved);
 
             Log("Copying Test Plans...");
             TestPlanMigration tcm = new TestPlanMigration(sourceTFS, targetTFS);
-            tcm.UsersMap = userMap;
+            tcm.UsersMap = Usermap;
             tcm.WorkItemIdMap = workItemIdMap;
             tcm.TestPlanIdMap = testPlanIdMap;
             tcm.CopyTestPlans();
@@ -64,13 +74,6 @@ namespace TFSProjectMigration.Conversion
             var teamQueryWriter = new TeamQueryWriter(targetTFS.collection, targetTFS.project);
 
             teamQueryWriter.SetTeamQueries(teamQueryReader.queryCol, sourceTFS.project.Name); //Copy Queries
-        }
-
-        private UserMap GetUserMap()
-        {
-            var userMigration = new UserMapper(sourceTFS, targetTFS);
-            var userMap = userMigration.MapUserIds();
-            return userMap;
         }
 
         private void SetupAreasAndIterations()

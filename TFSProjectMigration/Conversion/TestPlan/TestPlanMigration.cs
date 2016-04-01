@@ -62,7 +62,7 @@ namespace TFSProjectMigration
                 System.Diagnostics.Debug.WriteLine("Plan - {0} : {1}", sourceplan.Id, sourceplan.Name);
 
                 ITestPlan destinationplan = destinationproj.TestPlans.Create();
-
+                
                 destinationplan.Name = sourceplan.Name;
                 destinationplan.Description = sourceplan.Description;
                 destinationplan.StartDate = sourceplan.StartDate;

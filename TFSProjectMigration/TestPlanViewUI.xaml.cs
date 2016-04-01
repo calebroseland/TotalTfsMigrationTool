@@ -42,8 +42,6 @@ namespace TFSProjectMigration
         public TestPlanViewUI()
         {
             InitializeComponent();
-
-            this.DataContext = new MigrationViewModel();
         }
 
         public void printProjectName()
@@ -51,10 +49,7 @@ namespace TFSProjectMigration
             Labal1.Content = projectName;
             ViewTestPlans();
         }
-
-
-
-
+        
         private void ViewTestPlans()
         {
             if (_tfs != null)

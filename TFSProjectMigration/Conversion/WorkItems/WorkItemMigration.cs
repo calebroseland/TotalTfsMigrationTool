@@ -22,7 +22,7 @@ namespace TFSProjectMigration
         TfsProject sourceProject;
         TfsProject targetProject;
 
-        WorkItemTypeCollection workItemTypes;
+        WorkItemTypeCollection workItemTypes => targetProject.project.WorkItemTypes;
         public WorkItemIdMap WorkItemIdMap { get; set; }
         public AreaIdMap AreadIdMap { get; set; }
         public IterationIdMap IterationIdMap { get; set; }
@@ -42,10 +42,7 @@ namespace TFSProjectMigration
             this.targetProject = targetProject;
 
             sourceWorkItemStore = (WorkItemStore)sourceProject.collection.GetService(typeof(WorkItemStore));
-            targetWorkItemStore = (WorkItemStore)targetProject.collection.GetService(typeof(WorkItemStore));
-
-            workItemTypes = targetProject.project.WorkItemTypes;
-            WorkItemIdMap = new WorkItemIdMap();
+            targetWorkItemStore = (WorkItemStore)targetProject.collection.GetService(typeof(WorkItemStore));            
         }
 
         //get all workitems from tfs
@@ -53,66 +50,67 @@ namespace TFSProjectMigration
         {
             WorkItemCollection workItemCollection = targetWorkItemStore.Query(" SELECT * " +
                                                                   " FROM WorkItems " +
-                                                                  " WHERE [System.TeamProject] = '" + targetProject.Name +
+                                                                  " WHERE [System.TeamProject] = '" + targetProject.project.Name +
                                                                   "' ORDER BY [System.Id]");
             return workItemCollection;
         }
 
 
-        public void updateToLatestStatus(WorkItem oldWorkItem, WorkItem newWorkItem)
+        public bool updateToLatestStatus(WorkItem sourceWorkItem, WorkItem targetWorkItem)
         {
-            Queue<string> result = new Queue<string>();
+            Queue<string> allStates = new Queue<string>();
+
             string previousState = null;
-            string originalState = (string)newWorkItem.Fields["State"].Value;
-            string sourceState = (string)oldWorkItem.Fields["State"].Value;
-            string sourceFinalReason = (string)oldWorkItem.Fields["Reason"].Value;
+            string originalTargetState = (string)targetWorkItem.Fields["State"].Value;
+            string sourceState = (string)sourceWorkItem.Fields["State"].Value;
+            string sourceFinalReason = (string)sourceWorkItem.Fields["Reason"].Value;
 
             //try to change the status directly
-            newWorkItem.Open();
-            newWorkItem.Fields["State"].Value = oldWorkItem.Fields["State"].Value;
-            //System.Diagnostics.Debug.WriteLine(newWorkItem.Type.Name + "      " + newWorkItem.Fields["State"].Value);
-
+            targetWorkItem.Open();
+            targetWorkItem.Fields["State"].Value = sourceWorkItem.Fields["State"].Value;
+            
             //if status can't be changed directly... 
-            if (newWorkItem.Fields["State"].Status != FieldStatus.Valid)
+            if (targetWorkItem.Fields["State"].Status != FieldStatus.Valid)
             {
                 //get the state transition history of the source work item.
-                foreach (Revision revision in oldWorkItem.Revisions)
+                foreach (Revision revision in sourceWorkItem.Revisions)
                 {
                     // Get Status          
                     if (!revision.Fields["State"].Value.Equals(previousState))
                     {
                         previousState = revision.Fields["State"].Value.ToString();
-                        result.Enqueue(previousState);
+                        allStates.Enqueue(previousState);
                     }
 
                 }
 
                 int i = 1;
-                previousState = originalState;
+                previousState = originalTargetState;
                 //traverse new work item through old work items's transition states
-                foreach (String currentStatus in result)
+                foreach (var newState in allStates)
                 {
-                    bool success = false;
-                    if (i != result.Count)
+                    if (i != allStates.Count)
                     {
-                        success = ChangeWorkItemStatus(newWorkItem, previousState, currentStatus);
-                        previousState = currentStatus;
+                        if (!ChangeWorkItemStatus(targetWorkItem, previousState, newState))
+                            break;
+
+                        previousState = newState;
                     }
                     else
                     {
-                        success = ChangeWorkItemStatus(newWorkItem, previousState, currentStatus, sourceFinalReason);
+                        return ChangeWorkItemStatus(targetWorkItem, previousState, newState, sourceFinalReason);
                     }
-                    i++;
-                    // If we could not do the incremental state change then we are done.  We will have to go back to the orginal...
-                    if (!success)
-                        break;
+
+                    i++;                    
                 }
             }
             else
             {
                 // Just save it off if we can.
-                bool success = ChangeWorkItemStatus(newWorkItem, originalState, sourceState);
+                return ChangeWorkItemStatus(targetWorkItem, originalTargetState, sourceState);
             }
+
+            return false;
         }
 
         private bool ChangeWorkItemStatus(WorkItem workItem, string orginalSourceState, string destState, string reason = null)
@@ -130,8 +128,7 @@ namespace TFSProjectMigration
                 {
                     if (!CorrectErrorsAbsolutely)
                     {
-                        logger.WarnFormat("Work item {0} Validation Error in field: {1}  : {2}", workItem.Id,
-                            item.Name, workItem.Fields[item.Name].Value);
+                        logger.WarnFormat("Work item {0} Validation Error in field: {1}  : {2}", workItem.Id, item.Name, workItem.Fields[item.Name].Value);
                     }
                     else
                     {
@@ -149,8 +146,8 @@ namespace TFSProjectMigration
             }
             catch (Exception)
             {
-                logger.WarnFormat("Failed to save state for workItem: {0}  type:'{1}' state from '{2}' to '{3}' => rolling workItem status to original state '{4}'",
-                    workItem.Id, workItem.Type.Name, orginalSourceState, destState, orginalSourceState);
+                logger.WarnFormat("Failed to save state for workItem: {0}  type:'{1}' state from '{2}' to '{3}' => rolling workItem status to original state '{4}'", workItem.Id, workItem.Type.Name, orginalSourceState, destState, orginalSourceState);
+
                 //Revert back to the original value.
                 workItem.Fields["State"].Value = orginalSourceState;
                 return false;
@@ -193,138 +190,36 @@ namespace TFSProjectMigration
                     continue;
                 }
 
-               var map = WorkitemTemplateMap.GetMapping(sourceWorkItem.Type);
-               if (map == null)
-               {
-                  logger.InfoFormat("Work Item Type {0} is not mapped", sourceWorkItem.Type.Name);
-                  continue;
-               }
-
-               var fieldMap = WorkitemTemplateMap.GetFieldMapping(sourceWorkItem.Type, map);
-               var newWorkItem = new WorkItem(map);
-
-                /* assign relevent fields*/
-                foreach (Field field in sourceWorkItem.Fields)
+                var map = WorkitemTemplateMap.GetMapping(sourceWorkItem.Type);
+                if (map == null)
                 {
-                     //these fields can't be updated
-                    if (field.ReferenceName == "System.Id" 
-                        || field.ReferenceName == "System.State" 
-                        || field.ReferenceName == "System.Reason" 
-                        || field.ReferenceName == "System.Rev"
-                        || field.ReferenceName == "System.Watermark"
-                        || field.ReferenceName == "System.AreaId"
-                        || field.ReferenceName == "System.IterationId")
-                    {
-                        // ignore
-                        continue;
-                    }
-
-                    //Add values to mapped fields
-                    if (fieldMap.ContainsKey(field.FieldDefinition))
-                    {
-                        try
-                        {
-                           var mappedField = fieldMap[field.FieldDefinition];
-                           if (!newWorkItem.Fields[mappedField.Name].IsEditable)
-                           {
-                              //readonly, try again later
-                              logger.Warn("Field readonly: " + mappedField.ReferenceName);
-                              continue;
-                           }
-
-                            if (field.Value is string)
-                            {
-                                string user;
-                                if (UsersMap.TryGetValue((string)field.Value, out user))
-                                {
-                                    newWorkItem.Fields[mappedField.Name].Value = user;
-                                }
-                            }
-
-                           if (field.ReferenceName == "System.AreaPath"
-                                       || field.ReferenceName == "System.IterationPath"
-                                       || field.ReferenceName == "System.TeamProject")
-                           {
-                              try
-                              {
-                                 string iterationPath = (string)field.Value;
-                                 int length = sourceProject.project.Name.Length;
-
-                                 string itPathNew = targetProject.Name + iterationPath.Substring(length);
-                                 newWorkItem.Fields[mappedField.Name].Value = itPathNew;
-                              }
-                              catch (Exception ex)
-                              {
-                                 logger.Warn("Error supressed: ", ex);
-                              }
-                           }
-                           else
-                           {
-                              newWorkItem.Fields[mappedField.Name].Value = field.Value;
-                           }
-                        }
-                        catch (Exception ex)
-                        {
-                           logger.Warn("Error in set value: ", ex);
-                        }
-                       
-                    }
+                    logger.InfoFormat("Work Item Type {0} is not mapped", sourceWorkItem.Type.Name);
+                    continue;
                 }
 
-                /* Validate Item Before Save*/
-                ArrayList array = newWorkItem.Validate();
-                bool isInError = array.Count != 0;
-                foreach (Field item in array)
+                var fieldMap = WorkitemTemplateMap.GetFieldMapping(sourceWorkItem.Type, map);
+                var newWorkItem = new WorkItem(map);
+
+                CopyAllfields(sourceWorkItem, fieldMap, newWorkItem);
+                                               
+                if (ValidateAndTryFix(sourceWorkItem, newWorkItem))
                 {
-                    if (!CorrectErrorsAbsolutely)
-                    {
-                        logger.WarnFormat("Work item {0} Validation Error in field: {1}  : {2}", sourceWorkItem.Id,
-                            item.Name, newWorkItem.Fields[item.Name].Value);
-                    }
-                    else
-                    {
-                        var initialValue = item.Value.ToString();
-                        var allowedValueSortedByAcceptability =
-                            item.AllowedValues.OfType<string>().OrderBy(e => LevenshteinDistance.Compute(initialValue, e));
-                        var value = allowedValueSortedByAcceptability.First();
-                        item.Value = value;
-                        logger.WarnFormat("Work item {0} Validation Error in field: {1}  : {2}=> Replaced by value: {3}", sourceWorkItem.Id,
-                            item.Name, initialValue, value);
-                    }
-                }
-                if (isInError && CorrectErrorsAbsolutely)
-                    array = newWorkItem.Validate();
 
-                //if work item is valid
-                if (array.Count == 0)
-                {
-                    try
-                    {
-                        DownloadAttachment(sourceWorkItem);
-                        UploadAttachments(newWorkItem, sourceWorkItem);
-                        newWorkItem.Save();
+                    DownloadAttachment(sourceWorkItem);
+                    UploadAttachments(newWorkItem, sourceWorkItem);
+                    newWorkItem.Save();
 
-                        WorkItemIdMap.Map(sourceWorkItem.Id, newWorkItem.Id);
-                        newItems.Add(sourceWorkItem);
-                    }
-                    catch (Exception)
-                    {
-                        throw;
-                    }
-
+                    WorkItemIdMap.Map(sourceWorkItem.Id, newWorkItem.Id);
+                    
                     //update workitem status
                     updateToLatestStatus(sourceWorkItem, newWorkItem);
+                    CreateLinks(new[] { sourceWorkItem }.ToList());
                 }
                 else
                 {
                     logger.ErrorFormat("Work item {0} could not be saved", sourceWorkItem.Id);
                 }
 
-                //ProgressBar.Dispatcher.BeginInvoke(new Action(delegate()
-                //{
-                //    float progress = (float)i / (float)workItemCollection.Count;
-                //    ProgressBar.Value = ((float)i / (float)workItemCollection.Count) * 100;
-                //}));
                 i++;
             }
 
@@ -332,6 +227,92 @@ namespace TFSProjectMigration
             CreateLinks(newItems);
         }
 
+        private bool ValidateAndTryFix(WorkItem sourceWorkItem, WorkItem newWorkItem)
+        {
+            ArrayList array = newWorkItem.Validate();
+            bool isInError = array.Count != 0;
+            foreach (Field item in array)
+            {
+                if (!CorrectErrorsAbsolutely)
+                {
+                    logger.WarnFormat("Work item {0} Validation Error in field: {1}  : {2}", sourceWorkItem.Id,
+                        item.Name, newWorkItem.Fields[item.Name].Value);
+                }
+                else
+                {
+                    var initialValue = item.Value.ToString();
+                    var allowedValueSortedByAcceptability =
+                        item.AllowedValues.OfType<string>().OrderBy(e => LevenshteinDistance.Compute(initialValue, e));
+                    var value = allowedValueSortedByAcceptability.First();
+                    item.Value = value;
+                    logger.WarnFormat("Work item {0} Validation Error in field: {1}  : {2}=> Replaced by value: {3}", sourceWorkItem.Id,
+                        item.Name, initialValue, value);
+                }
+            }
+
+            if (isInError && CorrectErrorsAbsolutely)
+                array = newWorkItem.Validate();
+
+            return array.Count == 0;
+        }
+
+        private void CopyAllfields(WorkItem sourceWorkItem, Dictionary<FieldDefinition, FieldDefinition> fieldMap, WorkItem newWorkItem)
+        {
+            foreach (Field field in sourceWorkItem.Fields)
+            {
+                //these fields can't be updated
+                if (field.ReferenceName == "System.State"
+                    || field.ReferenceName == "System.Reason")
+                {
+                    // ignore these fields now, we'll handle them later
+                    continue;
+                }
+
+                if (fieldMap.ContainsKey(field.FieldDefinition))
+                {
+                    try
+                    {
+                        var mappedField = fieldMap[field.FieldDefinition];
+                        if (!newWorkItem.Fields[mappedField.Name].IsEditable)
+                        {
+                            logger.Warn("Field readonly: " + mappedField.ReferenceName);
+                            continue;
+                        }
+
+                        string user;
+                        if (field.ReferenceName == "System.AreaPath"
+                            || field.ReferenceName == "System.IterationPath"
+                            || field.ReferenceName == "System.TeamProject")
+                        {
+                            try
+                            {
+                                string iterationPath = (string)field.Value;
+                                int length = sourceProject.project.Name.Length;
+
+                                string itPathNew = targetProject.project.Name + iterationPath.Substring(length);
+                                newWorkItem.Fields[mappedField.Name].Value = itPathNew;
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.Warn("Error supressed: ", ex);
+                            }
+                        }
+                        else if (field.Value is string && UsersMap.TryGetValue((string)field.Value, out user))
+                        {
+                            newWorkItem.Fields[mappedField.Name].Value = user;
+                        }
+                        else
+                        {
+                            newWorkItem.Fields[mappedField.Name].Value = field.Value;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Warn("Error in set value: ", ex);
+                    }
+                }
+            }
+        }
 
         static class LevenshteinDistance
         {
@@ -418,7 +399,7 @@ namespace TFSProjectMigration
         private void CreateLinks(List<WorkItem> workItemCollection)
         {
             List<int> linkedWorkItemList = new List<int>();
-            WorkItemCollection targetWorkItemCollection = GetWorkItemCollection();
+            //WorkItemCollection targetWorkItemCollection = GetWorkItemCollection();
             foreach (WorkItem workItem in workItemCollection)
             {
                 WorkItemLinkCollection links = workItem.WorkItemLinks;
@@ -560,183 +541,183 @@ namespace TFSProjectMigration
 
         }
 
-        /* Compare work item type definitions and add fields from source work item types and replace workflow */
-        public void SetFieldDefinitions(WorkItemTypeCollection workItemTypesSource, Hashtable fieldList)
-        {
-            foreach (WorkItemType workItemTypeSource in workItemTypesSource)
-            {
-                WorkItemType workItemTypeTarget = null;
-                if (workItemTypeSource.Name == "User Story")
-                {
-                    workItemTypeTarget = workItemTypes["Product Backlog Item"];
-                }
-                else if (workItemTypeSource.Name == "Issue")
-                {
-                    workItemTypeTarget = workItemTypes["Impediment"];
-                }
-                else
-                {
-                    workItemTypeTarget = workItemTypes[workItemTypeSource.Name];
-                }
+        ///* Compare work item type definitions and add fields from source work item types and replace workflow */
+        //public void SetFieldDefinitions(WorkItemTypeCollection workItemTypesSource, Hashtable fieldList)
+        //{
+        //    foreach (WorkItemType workItemTypeSource in workItemTypesSource)
+        //    {
+        //        WorkItemType workItemTypeTarget = null;
+        //        if (workItemTypeSource.Name == "User Story")
+        //        {
+        //            workItemTypeTarget = workItemTypes["Product Backlog Item"];
+        //        }
+        //        else if (workItemTypeSource.Name == "Issue")
+        //        {
+        //            workItemTypeTarget = workItemTypes["Impediment"];
+        //        }
+        //        else
+        //        {
+        //            workItemTypeTarget = workItemTypes[workItemTypeSource.Name];
+        //        }
 
-                XmlDocument workItemTypeXmlSource = workItemTypeSource.Export(false);
-                XmlDocument workItemTypeXmlTarget = workItemTypeTarget.Export(false);
+        //        XmlDocument workItemTypeXmlSource = workItemTypeSource.Export(false);
+        //        XmlDocument workItemTypeXmlTarget = workItemTypeTarget.Export(false);
 
-                workItemTypeXmlTarget = AddNewFields(workItemTypeXmlSource, workItemTypeXmlTarget, (List<object>)fieldList[workItemTypeTarget.Name]);
+        //        workItemTypeXmlTarget = AddNewFields(workItemTypeXmlSource, workItemTypeXmlTarget, (List<object>)fieldList[workItemTypeTarget.Name]);
 
-                try
-                {
-                    WorkItemType.Validate(targetProject.project, workItemTypeXmlTarget.InnerXml);
-                    targetProject.project.WorkItemTypes.Import(workItemTypeXmlTarget.InnerXml);
-                }
-                catch (XmlException)
-                {
-                    logger.Info("XML import falied for " + workItemTypeSource.Name);
-                }
+        //        try
+        //        {
+        //            WorkItemType.Validate(targetProject.project, workItemTypeXmlTarget.InnerXml);
+        //            targetProject.project.WorkItemTypes.Import(workItemTypeXmlTarget.InnerXml);
+        //        }
+        //        catch (XmlException)
+        //        {
+        //            logger.Info("XML import falied for " + workItemTypeSource.Name);
+        //        }
 
-            }
+        //    }
 
-        }
+        //}
 
-        /* Add field definitions from Source xml to target xml */
-        private XmlDocument AddNewFields(XmlDocument workItemTypeXmlSource, XmlDocument workItemTypeXmlTarget, List<object> fieldList)
-        {
-            XmlNodeList parentNodeList = workItemTypeXmlTarget.GetElementsByTagName("FIELDS");
-            XmlNode parentNode = parentNodeList[0];
-            foreach (object[] list in fieldList)
-            {
-                if ((bool)list[1])
-                {
-                    XmlNodeList transitionsListSource = workItemTypeXmlSource.SelectNodes("//FIELD[@name='" + list[0] + "']");
-                    try
-                    {
-                        XmlNode copiedNode = workItemTypeXmlTarget.ImportNode(transitionsListSource[0], true);
-                        parentNode.AppendChild(copiedNode);
-                    }
-                    catch (Exception)
-                    {
-                        logger.ErrorFormat("Error adding new field for parent node : {0}", parentNode.Value);
-                    }
-                }
-            }
-            return workItemTypeXmlTarget;
-        }
-
-
-        /*Add new Field definition to work item type */
-        private XmlDocument AddField(XmlDocument workItemTypeXml, string fieldName, string fieldRefName, string fieldType, string fieldReportable)
-        {
-            XmlNodeList tempList = workItemTypeXml.SelectNodes("//FIELD[@name='" + fieldName + "']");
-            if (tempList.Count == 0)
-            {
-                XmlNode parent = workItemTypeXml.GetElementsByTagName("FIELDS")[0];
-                XmlElement node = workItemTypeXml.CreateElement("FIELD");
-                node.SetAttribute("name", fieldName);
-                node.SetAttribute("refname", fieldRefName);
-                node.SetAttribute("type", fieldType);
-                node.SetAttribute("reportable", fieldReportable);
-                parent.AppendChild(node);
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("Field already exists...");
-                logger.InfoFormat("Field {0} already exists", fieldName);
-            }
-            return workItemTypeXml;
-        }
+        ///* Add field definitions from Source xml to target xml */
+        //private XmlDocument AddNewFields(XmlDocument workItemTypeXmlSource, XmlDocument workItemTypeXmlTarget, List<object> fieldList)
+        //{
+        //    XmlNodeList parentNodeList = workItemTypeXmlTarget.GetElementsByTagName("FIELDS");
+        //    XmlNode parentNode = parentNodeList[0];
+        //    foreach (object[] list in fieldList)
+        //    {
+        //        if ((bool)list[1])
+        //        {
+        //            XmlNodeList transitionsListSource = workItemTypeXmlSource.SelectNodes("//FIELD[@name='" + list[0] + "']");
+        //            try
+        //            {
+        //                XmlNode copiedNode = workItemTypeXmlTarget.ImportNode(transitionsListSource[0], true);
+        //                parentNode.AppendChild(copiedNode);
+        //            }
+        //            catch (Exception)
+        //            {
+        //                logger.ErrorFormat("Error adding new field for parent node : {0}", parentNode.Value);
+        //            }
+        //        }
+        //    }
+        //    return workItemTypeXmlTarget;
+        //}
 
 
-        public string ReplaceWorkFlow(WorkItemTypeCollection workItemTypesSource, List<object> fieldList)
-        {
-            string error = "";
-            for (int i = 0; i < fieldList.Count; i++)
-            {
-                object[] list = (object[])fieldList[i];
-                if ((bool)list[1])
-                {
-                    WorkItemType workItemTypeTarget = workItemTypes[(string)list[0]];
-
-                    WorkItemType workItemTypeSource = null;
-                    if (workItemTypesSource.Contains((string)list[0]))
-                    {
-                        workItemTypeSource = workItemTypesSource[(string)list[0]];
-                    }
-                    else if (workItemTypeTarget.Name == "Product Backlog Item")
-                    {
-                        workItemTypeSource = workItemTypesSource["User Story"];
-                    }
-                    else if (workItemTypeTarget.Name == "Impediment")
-                    {
-                        workItemTypeSource = workItemTypesSource["Issue"];
-                    }
-
-                    XmlDocument workItemTypeXmlSource = workItemTypeSource.Export(false);
-                    XmlDocument workItemTypeXmlTarget = workItemTypeTarget.Export(false);
-
-                    XmlNodeList transitionsListSource = workItemTypeXmlSource.GetElementsByTagName("WORKFLOW");
-                    XmlNode transitions = transitionsListSource[0];
-
-                    XmlNodeList transitionsListTarget = workItemTypeXmlTarget.GetElementsByTagName("WORKFLOW");
-                    XmlNode transitionsTarget = transitionsListTarget[0];
-                    string defTarget = "";
-                    try
-                    {
-                        string def = workItemTypeXmlTarget.InnerXml;
-                        string workflowSource = transitions.OuterXml;
-                        string workflowTarget = transitionsTarget.OuterXml;
-
-                        defTarget = def.Replace(workflowTarget, workflowSource);
-                        WorkItemType.Validate(targetProject.project, defTarget);
-                        targetProject.project.WorkItemTypes.Import(defTarget);
-                        fieldList.Remove(list);
-                        i--;
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.Error("Error Replacing work flow");
-                        error = error + "Error Replacing work flow for " + (string)list[0] + ":" + ex.Message + "\n";
-                    }
-
-                }
-            }
-            return error;
-        }
+        ///*Add new Field definition to work item type */
+        //private XmlDocument AddField(XmlDocument workItemTypeXml, string fieldName, string fieldRefName, string fieldType, string fieldReportable)
+        //{
+        //    XmlNodeList tempList = workItemTypeXml.SelectNodes("//FIELD[@name='" + fieldName + "']");
+        //    if (tempList.Count == 0)
+        //    {
+        //        XmlNode parent = workItemTypeXml.GetElementsByTagName("FIELDS")[0];
+        //        XmlElement node = workItemTypeXml.CreateElement("FIELD");
+        //        node.SetAttribute("name", fieldName);
+        //        node.SetAttribute("refname", fieldRefName);
+        //        node.SetAttribute("type", fieldType);
+        //        node.SetAttribute("reportable", fieldReportable);
+        //        parent.AppendChild(node);
+        //    }
+        //    else
+        //    {
+        //        System.Diagnostics.Debug.WriteLine("Field already exists...");
+        //        logger.InfoFormat("Field {0} already exists", fieldName);
+        //    }
+        //    return workItemTypeXml;
+        //}
 
 
-        private object[] GetAllTransitionsForWorkItemType(XmlDocument workItemTypeXml)
-        {
-            XmlNodeList transitionsList = workItemTypeXml.GetElementsByTagName("TRANSITION");
+        //public string ReplaceWorkFlow(WorkItemTypeCollection workItemTypesSource, List<object> fieldList)
+        //{
+        //    string error = "";
+        //    for (int i = 0; i < fieldList.Count; i++)
+        //    {
+        //        object[] list = (object[])fieldList[i];
+        //        if ((bool)list[1])
+        //        {
+        //            WorkItemType workItemTypeTarget = workItemTypes[(string)list[0]];
 
-            string[] start = new string[transitionsList.Count];
-            string[] dest = new string[transitionsList.Count];
-            string[][] values = new string[transitionsList.Count][];
+        //            WorkItemType workItemTypeSource = null;
+        //            if (workItemTypesSource.Contains((string)list[0]))
+        //            {
+        //                workItemTypeSource = workItemTypesSource[(string)list[0]];
+        //            }
+        //            else if (workItemTypeTarget.Name == "Product Backlog Item")
+        //            {
+        //                workItemTypeSource = workItemTypesSource["User Story"];
+        //            }
+        //            else if (workItemTypeTarget.Name == "Impediment")
+        //            {
+        //                workItemTypeSource = workItemTypesSource["Issue"];
+        //            }
 
-            int j = 0;
-            foreach (XmlNode transition in transitionsList)
-            {
-                start[j] = transition.Attributes["from"].Value;
-                dest[j] = transition.Attributes["to"].Value;
+        //            XmlDocument workItemTypeXmlSource = workItemTypeSource.Export(false);
+        //            XmlDocument workItemTypeXmlTarget = workItemTypeTarget.Export(false);
 
-                XmlNodeList reasons = transition.SelectNodes("REASONS/REASON");
+        //            XmlNodeList transitionsListSource = workItemTypeXmlSource.GetElementsByTagName("WORKFLOW");
+        //            XmlNode transitions = transitionsListSource[0];
 
-                string[] reasonVal = new string[1 + reasons.Count];
-                reasonVal[0] = transition.SelectSingleNode("REASONS/DEFAULTREASON").Attributes["value"].Value;
+        //            XmlNodeList transitionsListTarget = workItemTypeXmlTarget.GetElementsByTagName("WORKFLOW");
+        //            XmlNode transitionsTarget = transitionsListTarget[0];
+        //            string defTarget = "";
+        //            try
+        //            {
+        //                string def = workItemTypeXmlTarget.InnerXml;
+        //                string workflowSource = transitions.OuterXml;
+        //                string workflowTarget = transitionsTarget.OuterXml;
 
-                int i = 1;
-                if (reasons != null)
-                {
-                    foreach (XmlNode reason in reasons)
-                    {
-                        reasonVal[i] = reason.Attributes["value"].Value;
-                        i++;
-                    }
-                }
-                values[j] = reasonVal;
-                j++;
-            }
+        //                defTarget = def.Replace(workflowTarget, workflowSource);
+        //                WorkItemType.Validate(targetProject.project, defTarget);
+        //                targetProject.project.WorkItemTypes.Import(defTarget);
+        //                fieldList.Remove(list);
+        //                i--;
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                logger.Error("Error Replacing work flow");
+        //                error = error + "Error Replacing work flow for " + (string)list[0] + ":" + ex.Message + "\n";
+        //            }
 
-            return new object[] { start, dest, values };
-        }
+        //        }
+        //    }
+        //    return error;
+        //}
+
+
+        //private object[] GetAllTransitionsForWorkItemType(XmlDocument workItemTypeXml)
+        //{
+        //    XmlNodeList transitionsList = workItemTypeXml.GetElementsByTagName("TRANSITION");
+
+        //    string[] start = new string[transitionsList.Count];
+        //    string[] dest = new string[transitionsList.Count];
+        //    string[][] values = new string[transitionsList.Count][];
+
+        //    int j = 0;
+        //    foreach (XmlNode transition in transitionsList)
+        //    {
+        //        start[j] = transition.Attributes["from"].Value;
+        //        dest[j] = transition.Attributes["to"].Value;
+
+        //        XmlNodeList reasons = transition.SelectNodes("REASONS/REASON");
+
+        //        string[] reasonVal = new string[1 + reasons.Count];
+        //        reasonVal[0] = transition.SelectSingleNode("REASONS/DEFAULTREASON").Attributes["value"].Value;
+
+        //        int i = 1;
+        //        if (reasons != null)
+        //        {
+        //            foreach (XmlNode reason in reasons)
+        //            {
+        //                reasonVal[i] = reason.Attributes["value"].Value;
+        //                i++;
+        //            }
+        //        }
+        //        values[j] = reasonVal;
+        //        j++;
+        //    }
+
+        //    return new object[] { start, dest, values };
+        //}
 
 
         public WorkItemCollection GetSourceWorkItems(bool IsNotIncludeClosed, bool IsNotIncludeRemoved)
@@ -773,7 +754,7 @@ namespace TFSProjectMigration
             {
                 query = string.Format(" SELECT * " +
                                                    " FROM WorkItems " +
-                                                   " WHERE [System.TeamProject] = '" + project +
+                                                   " WHERE [System.TeamProject] = '" + project.project.Name +
                                                    "' ORDER BY [System.Id]");
             }
 
