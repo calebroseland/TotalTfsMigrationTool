@@ -68,10 +68,10 @@ namespace TFSProjectMigration
 
         private void validateConfiguration()
         {
-            foreach (var item in FieldMapping.GetConfigurationErrors())
-            {
-                Log(item);
-            }
+            //foreach (var item in FieldMapping.GetConfigurationErrors())
+            //{
+            //    Log(item);
+            //}
         }
 
         public string MigrationName  {  get; set;  }

@@ -333,7 +333,7 @@
     </Compile>
     <Compile Include="ViewModel\UserMappingViewModel.cs" />
     <Compile Include="ViewModel\MigrationViewModel.cs" />
-    <Compile Include="ViewModel\WorkItemTypeMappingViewModel.cs" />
+    <Compile Include="ViewModel\WorkIemTypeMappingViewModel.cs" />
     <Page Include="TestPlanViewUI.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>

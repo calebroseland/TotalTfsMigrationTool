@@ -33,16 +33,6 @@
                         </DockPanel>
 
                     </GroupBox>
-                    <Button x:Name="NextButton" Content="Next" HorizontalAlignment="Left" VerticalAlignment="Top" Width="97" Margin="298,492,0,0" Height="29" Click="NextButton_Click" Grid.Column="1">
-                        <Button.Background>
-                            <LinearGradientBrush EndPoint="0,1" StartPoint="0,0">
-                                <GradientStop Color="#FFF3F3F3" Offset="0"/>
-                                <GradientStop Color="#FFEBEBEB" Offset="0.5"/>
-                                <GradientStop Color="#FFDDDDDD" Offset="0.5"/>
-                                <GradientStop Color="{DynamicResource {x:Static SystemColors.ActiveBorderColorKey}}" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Button.Background>
-                    </Button>
                     <Label x:Name="ConnectionStatusLabel" Content="" HorizontalAlignment="Left" Margin="27,492,0,0" VerticalAlignment="Top" Width="346" FontStyle="Italic" Foreground="#FFBB1F1F" Background="Transparent" OpacityMask="Black" Grid.ColumnSpan="2" Height="26"/>
                     <TextBox x:Name="textBox" HorizontalAlignment="Left" Height="23" Margin="10,244,0,0" TextWrapping="Wrap" Text="{Binding MappingFile}" VerticalAlignment="Top" Width="477" Grid.ColumnSpan="2"/>
                     <Button x:Name="button" Content="..." Grid.Column="1" HorizontalAlignment="Left" Margin="365,247,0,0" VerticalAlignment="Top" Width="30" Command="{Binding BrowseMappingFile}"/>
@@ -50,7 +40,7 @@
 
                 </Grid>
             </TabItem>
-            <TabItem x:Name="FieldMappingTab" Header="Field Mapping" MinHeight="100" Margin="-2,-3,0,3" FontStretch="UltraExpanded" BorderBrush="#FFABD3FD" Foreground="#FF23578D">
+            <TabItem x:Name="FieldMappingTab" Header="Field Mapping" MinHeight="100" Margin="0,0,-2,0" FontStretch="UltraExpanded" BorderBrush="#FFABD3FD" Foreground="#FF23578D">
                 <Grid Background="White" DataContext="{Binding FieldMapping}">
                     <ComboBox x:Name="FieldTypesComboBox" HorizontalAlignment="Left" Height="26" Margin="244,97,0,0" VerticalAlignment="Top" Width="162" ItemsSource="{Binding SourceWorkItemTypes}" SelectedValue="{Binding CurrentSourceWorkItemType, Mode=TwoWay}" DisplayMemberPath="InnerValue.Name" SelectedValuePath="InnerValue" >
                         <ComboBox.OpacityMask>
@@ -128,7 +118,7 @@
             </TabItem>
             <TabItem x:Name="StartTab" Margin="-2,-4,0,4" Header="Start" Height="21" VerticalAlignment="Bottom" MinHeight="100" FontStretch="UltraExpanded" BorderBrush="#FFABD3FD" Foreground="#FF23578D">
                 <Grid Background="#FFFDFDFD">
-                    <Button x:Name="MigrationButton" Content="Migrate" HorizontalAlignment="Left" Margin="154,26,0,0" VerticalAlignment="Top" Width="134" Height="28" Command="{Binding StartMigration}"/>
+                    <Button x:Name="MigrationButton" Content="Migrate" HorizontalAlignment="Left" Margin="17,27,0,0" VerticalAlignment="Top" Width="134" Height="28" Command="{Binding StartMigration}"/>
 
                     <Label x:Name="MigratingLabel" Content="" HorizontalAlignment="Left" Margin="10,450,0,0" VerticalAlignment="Top" Width="141"/>
                     <ProgressBar x:Name="StatusBar" HorizontalAlignment="Left" Height="22" Margin="10,490,0,0" VerticalAlignment="Top" Width="532" Foreground="#FF1BAA1B" Visibility="Hidden"/>
@@ -145,7 +135,6 @@
                     <TextBlock x:Name="CheckLogTextBlock" Margin="10,388,457,133" Visibility="Hidden">
                         <Hyperlink x:Name="CheckLogHyperLink" Click="CheckLog_Click">Check Log File</Hyperlink>
                     </TextBlock>
-                    <Button x:Name="MigrationButton_Copy" Content="Migrate" HorizontalAlignment="Left" Margin="10,26,0,0" VerticalAlignment="Top" Width="134" Height="28" Command="{Binding ValidateConfiguration}" />
                 </Grid>
             </TabItem>
         </TabControl>
