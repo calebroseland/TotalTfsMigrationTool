@@ -62,7 +62,6 @@ namespace TFSProjectMigration
                 mp.Usermap = UserMapping.Usermap;
 
                 mp.workItemIdMap = new Conversion.WorkItems.WorkItemIdMap(MappingFile);
-                mp.testPlanIdMap = new Conversion.TestPlan.TestPlanIdMap();
 
                 await Task.Factory.StartNew(() => mp.StartMigration(IsNotIncludeClosed, IsNotIncludeRemoved));
             }

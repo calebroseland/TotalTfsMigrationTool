@@ -11,7 +11,6 @@ using TFSProjectMigration.Conversion.TeamQueries;
 using TFSProjectMigration.ProjectStructure;
 using TFSProjectMigration.Conversion.WorkItems;
 using TFSProjectMigration.Conversion.Users;
-using TFSProjectMigration.Conversion.TestPlan;
 
 namespace TFSProjectMigration.Conversion
 {
@@ -20,7 +19,6 @@ namespace TFSProjectMigration.Conversion
         private static readonly ILog logger = LogManager.GetLogger(typeof(MigrateProject));
 
         public WorkItemIdMap workItemIdMap;
-        public TestPlanIdMap testPlanIdMap;
         public WorkItemTypeMap FieldMap;
 
 
@@ -34,8 +32,6 @@ namespace TFSProjectMigration.Conversion
             if (workItemIdMap == null)
                 throw new InvalidFieldValueException(nameof(workItemIdMap) + " is not set");
 
-            if (testPlanIdMap == null)
-                throw new InvalidFieldValueException(nameof(testPlanIdMap) + " is not set");
 
             if (FieldMap == null)
                 throw new InvalidFieldValueException(nameof(FieldMap) + " is not set");
@@ -61,7 +57,6 @@ namespace TFSProjectMigration.Conversion
             TestPlanMigration tcm = new TestPlanMigration(sourceTFS, targetTFS);
             tcm.UsersMap = Usermap;
             tcm.WorkItemIdMap = workItemIdMap;
-            tcm.TestPlanIdMap = testPlanIdMap;
             tcm.CopyTestPlans();
             
             Log("Project Migrated");

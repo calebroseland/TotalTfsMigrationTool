@@ -13,21 +13,19 @@ using log4net;
 using System.Windows.Controls;
 using TFSProjectMigration.Conversion.WorkItems;
 using TFSProjectMigration.Conversion.Users;
-using TFSProjectMigration.Conversion.TestPlan;
 
 namespace TFSProjectMigration
 {
     public class TestPlanMigration
     {
-        ITestManagementTeamProject sourceproj;
-        ITestManagementTeamProject destinationproj;
+        ITestManagementTeamProject2 sourceproj;
+        ITestManagementTeamProject2 destinationproj;
         public WorkItemIdMap WorkItemIdMap { get; set; }
         String projectName;
         private static readonly ILog logger = LogManager.GetLogger(typeof(TFSWorkItemMigrationUI));
         internal UserMap UserMapping { get; set; }
 
         public UserMap UsersMap { get; internal set; }
-        internal TestPlanIdMap TestPlanIdMap { get; set; }
 
         public TestPlanMigration(TfsProject sourceTfs, TfsProject targetTfs)
         {
@@ -37,10 +35,10 @@ namespace TFSProjectMigration
             projectName = sourceTfs.project.Name;
         }
 
-        private ITestManagementTeamProject GetProject(TfsTeamProjectCollection tfs, string project)
+        private ITestManagementTeamProject2 GetProject(TfsTeamProjectCollection tfs, string project)
         {            
-            ITestManagementService tms = tfs.GetService<ITestManagementService>();
-            return tms.GetTeamProject(project);
+            ITestManagementService2 tms = tfs.GetService<ITestManagementService2>();
+            return (ITestManagementTeamProject2)tms.GetTeamProject(project);
         }
 
         public void CopyTestPlans()
@@ -57,18 +55,34 @@ namespace TFSProjectMigration
 
             //}
            
-            foreach (ITestPlan sourceplan in sourceproj.TestPlans.Query("Select * From TestPlan"))
+            foreach (ITestPlan2 sourceplan in sourceproj.TestPlans.Query("Select * From TestPlan"))
             {
                 System.Diagnostics.Debug.WriteLine("Plan - {0} : {1}", sourceplan.Id, sourceplan.Name);
 
-                ITestPlan destinationplan = destinationproj.TestPlans.Create();
+                ITestPlan2 destinationplan = null;
+                if (WorkItemIdMap.Contains(sourceplan.Id))
+                {
+                    var newId = WorkItemIdMap[sourceplan.Id];
+                    destinationplan =(ITestPlan2) destinationproj.TestPlans.Query("SELECT * from TestPlan").Where(a=> a.Id == newId).FirstOrDefault(); ;
+                    
+                }
+
+                if (destinationplan == null)
+                {
+                    destinationplan = (ITestPlan2)destinationproj.TestPlans.Create();
+                    destinationplan.Name = sourceplan.Name;
+
+                    destinationplan.Save();
+                    WorkItemIdMap.Map(sourceplan.Id, destinationplan.Id);
+                }
                 
-                destinationplan.Name = sourceplan.Name;
+                
                 destinationplan.Description = sourceplan.Description;
                 destinationplan.StartDate = sourceplan.StartDate;
                 destinationplan.EndDate = sourceplan.EndDate;
-                destinationplan.State = sourceplan.State;            
-                destinationplan.Save();
+                destinationplan.Status = sourceplan.Status;            
+                
+
 
                 //drill down to root test suites.
                 if (sourceplan.RootSuite != null && sourceplan.RootSuite.Entries.Count > 0)
@@ -100,11 +114,25 @@ namespace TFSProjectMigration
                 IStaticTestSuite suite = suite_entry.TestSuite as IStaticTestSuite;
                 if (suite != null)
                 {
-                    IStaticTestSuite newSuite = destinationproj.TestSuites.CreateStatic();
-                    newSuite.Title = suite.Title;
-                    destinationplan.RootSuite.Entries.Add(newSuite);
-                    destinationplan.Save();
+                    IStaticTestSuite newSuite = null;
+                    if (WorkItemIdMap.Contains(suite.Id))
+                    {
+                        var newId = WorkItemIdMap[suite.Id];
+                        newSuite = (IStaticTestSuite)destinationproj.TestSuites.Find(newId);
 
+                    }
+                    
+                    if (newSuite == null)
+                    {
+                        newSuite = destinationproj.TestSuites.CreateStatic();
+                        newSuite.Title = suite.Title;
+                        
+                        destinationplan.RootSuite.Entries.Add(newSuite);
+                        destinationplan.Save();
+
+                        WorkItemIdMap.Map(suite.Id, newSuite.Id);
+                    }                                                           
+                    
                     CopyTestCases(suite, newSuite);
                     if (suite.Entries.Count > 0)
                         CopySubTestSuites(suite, newSuite);
@@ -121,10 +149,14 @@ namespace TFSProjectMigration
                 IStaticTestSuite suite = suite_entry.TestSuite as IStaticTestSuite;
                 if (suite != null)
                 {
-                    IStaticTestSuite subSuite = destinationproj.TestSuites.CreateStatic();
+
+                    IStaticTestSuite subSuite;
+                    subSuite = destinationproj.TestSuites.CreateStatic();
+
+
                     subSuite.Title = suite.Title;
                     parentdestinationSuite.Entries.Add(subSuite);
-
+                    
                     CopyTestCases(suite, subSuite);
 
                     if (suite.Entries.Count > 0)
@@ -141,6 +173,7 @@ namespace TFSProjectMigration
         {
 
             ITestSuiteEntryCollection suiteentrys = sourcesuite.TestCases;
+            destinationsuite.Entries.RemoveCases(destinationsuite.Entries.OfType<ITestCase>());
 
             foreach (ITestSuiteEntry testcase in suiteentrys)
             {
@@ -151,7 +184,7 @@ namespace TFSProjectMigration
                         continue;
                     }
 
-                    int newWorkItemID = (int)WorkItemIdMap[testcase.TestCase.WorkItem.Id];
+                    int newWorkItemID = WorkItemIdMap[testcase.TestCase.WorkItem.Id];
                     ITestCase tc = destinationproj.TestCases.Find(newWorkItemID);
                     destinationsuite.Entries.Add(tc);
 

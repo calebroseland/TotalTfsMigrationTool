@@ -318,7 +318,6 @@
     <Compile Include="Conversion\ProjectStructure\AreasAndIterationReader.cs" />
     <Compile Include="Conversion\TeamQueries\TeamQueryReader.cs" />
     <Compile Include="Conversion\TeamQueries\TeamQueryWriter.cs" />
-    <Compile Include="Conversion\TestPlan\TestPlanMap.cs" />
     <Compile Include="Conversion\UserMap.cs" />
     <Compile Include="Conversion\UserMapper.cs" />
     <Compile Include="Conversion\WorkItems\WorkItemFieldMap2.cs" />
