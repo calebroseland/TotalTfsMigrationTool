@@ -4,7 +4,9 @@ namespace TFSProjectMigration.Conversion.WorkItems
 {
     public class WorkItemFieldMap2
     {
-        public Dictionary<string, string> MappedReferenceNames { get; set; }        
+        public Dictionary<string, string> MappedReferenceNames { get; set; }
+
+        public Dictionary<string, string> DefaultsForReferenceNames { get; set; }
 
         public List<string> SourceFields { get; set; }
 

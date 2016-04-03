@@ -3,6 +3,7 @@ using GalaSoft.MvvmLight.Command;
 using Microsoft.TeamFoundation.Client;
 using Microsoft.Win32;
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using TFSProjectMigration.Conversion;
 using TFSProjectMigration.Conversion.Users;
@@ -40,9 +41,14 @@ namespace TFSProjectMigration
         public string MappingFile { get; set; }
 
 
+        bool busy;
 
-        private void startMigration()
+        private async void startMigration()
         {
+            // lame check to prevent running multiple threads at once
+            if (busy)
+                return;
+
             try
             {
                 MigrateProject mp = new MigrateProject(SourceProject, TargetProject);
@@ -58,11 +64,15 @@ namespace TFSProjectMigration
                 mp.workItemIdMap = new Conversion.WorkItems.WorkItemIdMap(MappingFile);
                 mp.testPlanIdMap = new Conversion.TestPlan.TestPlanIdMap();
 
-                mp.StartMigration(IsNotIncludeClosed, IsNotIncludeRemoved);
+                await Task.Factory.StartNew(() => mp.StartMigration(IsNotIncludeClosed, IsNotIncludeRemoved));
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Error: " + ex);
+            }
+            finally
+            {
+                busy = false;
             }
         }
 

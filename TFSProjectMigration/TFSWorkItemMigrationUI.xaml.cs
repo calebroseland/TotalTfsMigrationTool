@@ -46,9 +46,9 @@ namespace TFSProjectMigration
          //MigrateProject mp = new MigrateProject(SourceProject.collection, TargetProject.collection, SourceProject.project, TargetProject.project);
          ((MigrationViewModel)DataContext).Log += (logMessage) =>
          {
-            MigratingLabel.Dispatcher.BeginInvoke(new Action(delegate ()
+             MigrationStatusText.Dispatcher.BeginInvoke(new Action(delegate ()
             {
-               MigratingLabel.Content += logMessage;
+                MigrationStatusText.Text += logMessage + Environment.NewLine;
             }));
          };
 

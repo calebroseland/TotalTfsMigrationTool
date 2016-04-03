@@ -176,6 +176,7 @@ namespace TFSProjectMigration
             var wi = GetSourceWorkItems(isNotIncludeClosed, isNotIncludeRemoved);
             CopyWorkItems(wi);
         }
+
         /* Copy work items to project from work item collection */
         public void CopyWorkItems(WorkItemCollection workItemCollection)
         {
@@ -211,7 +212,6 @@ namespace TFSProjectMigration
 
                     WorkItemIdMap.Map(sourceWorkItem.Id, newWorkItem.Id);
                     
-                    //update workitem status
                     updateToLatestStatus(sourceWorkItem, newWorkItem);
                     CreateLinks(new[] { sourceWorkItem }.ToList());
                 }
@@ -223,7 +223,6 @@ namespace TFSProjectMigration
                 i++;
             }
 
-            //WriteMaptoFile(sourceProjectName);
             CreateLinks(newItems);
         }
 
@@ -258,60 +257,49 @@ namespace TFSProjectMigration
 
         private void CopyAllfields(WorkItem sourceWorkItem, Dictionary<FieldDefinition, FieldDefinition> fieldMap, WorkItem newWorkItem)
         {
+            logger.Info("Start copy work item " + sourceWorkItem.Id);
+
+
             foreach (Field field in sourceWorkItem.Fields)
-            {
-                //these fields can't be updated
-                if (field.ReferenceName == "System.State"
-                    || field.ReferenceName == "System.Reason")
-                {
-                    // ignore these fields now, we'll handle them later
+            {                
+                if (field.ReferenceName == "System.State" || field.ReferenceName == "System.Reason")
                     continue;
-                }
-
-                if (fieldMap.ContainsKey(field.FieldDefinition))
+                
+                if (!fieldMap.ContainsKey(field.FieldDefinition))
+                    continue;
+              
+                try
                 {
-                    try
+                    var mappedField = fieldMap[field.FieldDefinition];                        
+                    if (!newWorkItem.Fields[mappedField.Name].IsEditable)
                     {
-                        var mappedField = fieldMap[field.FieldDefinition];
-                        if (!newWorkItem.Fields[mappedField.Name].IsEditable)
-                        {
-                            logger.Warn("Field readonly: " + mappedField.ReferenceName);
-                            continue;
-                        }
-
-                        string user;
-                        if (field.ReferenceName == "System.AreaPath"
-                            || field.ReferenceName == "System.IterationPath"
-                            || field.ReferenceName == "System.TeamProject")
-                        {
-                            try
-                            {
-                                string iterationPath = (string)field.Value;
-                                int length = sourceProject.project.Name.Length;
-
-                                string itPathNew = targetProject.project.Name + iterationPath.Substring(length);
-                                newWorkItem.Fields[mappedField.Name].Value = itPathNew;
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.Warn("Error supressed: ", ex);
-                            }
-                        }
-                        else if (field.Value is string && UsersMap.TryGetValue((string)field.Value, out user))
-                        {
-                            newWorkItem.Fields[mappedField.Name].Value = user;
-                        }
-                        else
-                        {
-                            newWorkItem.Fields[mappedField.Name].Value = field.Value;
-                        }
+                        logger.Warn("Field readonly: " + mappedField.ReferenceName);
+                        continue;
                     }
-                    catch (Exception ex)
+
+                    string user;
+                    if (field.ReferenceName == "System.AreaPath" || field.ReferenceName == "System.IterationPath" || field.ReferenceName == "System.TeamProject")
                     {
-                        logger.Warn("Error in set value: ", ex);
+                        string iterationPath = (string)field.Value;                                
+                        string itPathNew = targetProject.project.Name + iterationPath.Substring(sourceProject.project.Name.Length);
+
+                        newWorkItem.Fields[mappedField.Name].Value = itPathNew;                        
                     }
+                    else if (field.Value is string && UsersMap.TryGetValue((string)field.Value, out user))
+                    {
+                        newWorkItem.Fields[mappedField.Name].Value = user;
+                    }
+                    else
+                    {
+                        newWorkItem.Fields[mappedField.Name].Value = field.Value;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("Error in setting value " + field.Name, ex);
                 }
             }
+            
         }
 
         static class LevenshteinDistance

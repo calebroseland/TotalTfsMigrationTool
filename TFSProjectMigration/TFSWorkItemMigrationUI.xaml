@@ -36,7 +36,7 @@
                     <Label x:Name="ConnectionStatusLabel" Content="" HorizontalAlignment="Left" Margin="27,492,0,0" VerticalAlignment="Top" Width="346" FontStyle="Italic" Foreground="#FFBB1F1F" Background="Transparent" OpacityMask="Black" Grid.ColumnSpan="2" Height="26"/>
                     <TextBox x:Name="textBox" HorizontalAlignment="Left" Height="23" Margin="10,244,0,0" TextWrapping="Wrap" Text="{Binding MappingFile}" VerticalAlignment="Top" Width="477" Grid.ColumnSpan="2"/>
                     <Button x:Name="button" Content="..." Grid.Column="1" HorizontalAlignment="Left" Margin="365,247,0,0" VerticalAlignment="Top" Width="30" Command="{Binding BrowseMappingFile}"/>
-                    <Label Content="mapping file" HorizontalAlignment="Left" VerticalAlignment="Top" RenderTransformOrigin="0.026,0.077" Width="129" Margin="10,218,0,0" Grid.ColumnSpan="2"/>
+                    <Label Content="File where workitem ID mapping is saved" HorizontalAlignment="Left" VerticalAlignment="Top" RenderTransformOrigin="0.026,0.077" Width="129" Margin="10,218,0,0" Grid.ColumnSpan="2"/>
 
                 </Grid>
             </TabItem>
