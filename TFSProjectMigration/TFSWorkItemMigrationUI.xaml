@@ -59,7 +59,7 @@
                         </ComboBox.Background>
                     </ComboBox>
                     <Label Content="Select Source Work Item Type" HorizontalAlignment="Left" Height="31" Margin="32,94,0,0" VerticalAlignment="Top" Width="207"/>
-                    <GroupBox Header="Map Fields" HorizontalAlignment="Left" Height="267" Margin="32,187,0,0" VerticalAlignment="Top" Width="477" BorderBrush="#FFDADADA">
+                    <GroupBox Header="Map Fields (NOT WORKING YET, EDIT THE FILE MANUALLY)" HorizontalAlignment="Left" Height="267" Margin="32,187,0,0" VerticalAlignment="Top" Width="477" BorderBrush="#FFDADADA">
                         <WrapPanel HorizontalAlignment="Left" Height="192" Margin="0,10,0,-1" VerticalAlignment="Top" Width="458">
                             <ComboBox x:Name="SourceFieldComboBox" Height="26" Width="154"  ItemsSource="{Binding SourceFieldDefinitions}" SelectedItem="{Binding CurrentSourceFieldDefinition, Mode=TwoWay}" SelectedValuePath="InnerValue">
                                 <ComboBox.ItemTemplate>
