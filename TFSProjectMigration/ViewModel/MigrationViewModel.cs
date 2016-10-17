@@ -5,6 +5,7 @@ using Microsoft.Win32;
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Data;
 using TFSProjectMigration.Conversion;
 using TFSProjectMigration.Conversion.Users;
 
@@ -63,7 +64,7 @@ namespace TFSProjectMigration
 
                 mp.workItemIdMap = new Conversion.WorkItems.WorkItemIdMap(MappingFile);
 
-                await Task.Factory.StartNew(() => mp.StartMigration(IsNotIncludeClosed, IsNotIncludeRemoved));
+                await Task.Factory.StartNew(() => mp.StartMigration(IsNotIncludeClosed, IsNotIncludeRemoved, IsIncludeHistoryComment, IsIncludeHistoryLink, IsFixMultilineDescriptions));
             }
             catch (Exception ex)
             {
@@ -139,6 +140,21 @@ namespace TFSProjectMigration
         }
 
         public bool IsNotIncludeRemoved
+        {
+            get;
+            set;
+        }
+        public bool IsIncludeHistoryComment
+        {
+            get;
+            set;
+        }
+        public bool IsIncludeHistoryLink
+        {
+            get;
+            set;
+        }
+        public bool IsFixMultilineDescriptions
         {
             get;
             set;

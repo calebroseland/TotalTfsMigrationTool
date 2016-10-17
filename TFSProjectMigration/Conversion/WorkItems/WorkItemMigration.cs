@@ -1,28 +1,27 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using log4net;
+using Microsoft.TeamFoundation.WorkItemTracking.Client;
+using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.TeamFoundation.Client;
-using Microsoft.TeamFoundation.WorkItemTracking.Client;
-using System.Xml;
-using System.IO;
-using log4net;
-using System.Windows.Controls;
-using TFSProjectMigration.Conversion.WorkItems;
+using Microsoft.TeamFoundation.Common;
 using TFSProjectMigration.Conversion.ProjectStructure;
 using TFSProjectMigration.Conversion.Users;
+using TFSProjectMigration.Conversion.WorkItems;
 
 namespace TFSProjectMigration
 {
-   public class WorkItemMigration
+    public class WorkItemMigration
     {
         public WorkItemStore targetWorkItemStore;
         public WorkItemStore sourceWorkItemStore;
 
-        TfsProject sourceProject;
-        TfsProject targetProject;
+        private TfsProject sourceProject;
+        private TfsProject targetProject;
 
-        WorkItemTypeCollection workItemTypes => targetProject.project.WorkItemTypes;
+        private WorkItemTypeCollection workItemTypes => targetProject.project.WorkItemTypes;
         public WorkItemIdMap WorkItemIdMap { get; set; }
         public AreaIdMap AreadIdMap { get; set; }
         public IterationIdMap IterationIdMap { get; set; }
@@ -33,8 +32,8 @@ namespace TFSProjectMigration
         //public Hashtable fieldMapAll;
         //public Hashtable itemMapCIC;
         private static readonly ILog logger = LogManager.GetLogger(typeof(TFSWorkItemMigrationUI));
-        bool CorrectErrorsAbsolutely = true;
 
+        private bool CorrectErrorsAbsolutely = true;
 
         public WorkItemMigration(TfsProject sourceProject, TfsProject targetProject)
         {
@@ -42,7 +41,7 @@ namespace TFSProjectMigration
             this.targetProject = targetProject;
 
             sourceWorkItemStore = (WorkItemStore)sourceProject.collection.GetService(typeof(WorkItemStore));
-            targetWorkItemStore = (WorkItemStore)targetProject.collection.GetService(typeof(WorkItemStore));            
+            targetWorkItemStore = (WorkItemStore)targetProject.collection.GetService(typeof(WorkItemStore));
         }
 
         //get all workitems from tfs
@@ -54,7 +53,6 @@ namespace TFSProjectMigration
                                                                   "' ORDER BY [System.Id]");
             return workItemCollection;
         }
-
 
         public bool updateToLatestStatus(WorkItem sourceWorkItem, WorkItem targetWorkItem)
         {
@@ -68,20 +66,19 @@ namespace TFSProjectMigration
             //try to change the status directly
             targetWorkItem.Open();
             targetWorkItem.Fields["State"].Value = sourceWorkItem.Fields["State"].Value;
-            
-            //if status can't be changed directly... 
+
+            //if status can't be changed directly...
             if (targetWorkItem.Fields["State"].Status != FieldStatus.Valid)
             {
                 //get the state transition history of the source work item.
                 foreach (Revision revision in sourceWorkItem.Revisions)
                 {
-                    // Get Status          
+                    // Get Status
                     if (!revision.Fields["State"].Value.Equals(previousState))
                     {
                         previousState = revision.Fields["State"].Value.ToString();
                         allStates.Enqueue(previousState);
                     }
-
                 }
 
                 int i = 1;
@@ -101,7 +98,7 @@ namespace TFSProjectMigration
                         return ChangeWorkItemStatus(targetWorkItem, previousState, newState, sourceFinalReason);
                     }
 
-                    i++;                    
+                    i++;
                 }
             }
             else
@@ -120,9 +117,9 @@ namespace TFSProjectMigration
             {
                 workItem.Open();
                 workItem.Fields["State"].Value = destState;
-                if(reason != null)
+                if (reason != null)
                     workItem.Fields["Reason"].Value = reason;
-                
+
                 var errors = workItem.Validate();
                 foreach (Field item in errors)
                 {
@@ -162,23 +159,26 @@ namespace TFSProjectMigration
                     if (allowedValues.Contains("Closed"))
                         return "Closed";
                     return currentValue;
+
                 case "Actif":
                     if (allowedValues.Contains("Active"))
                         return "Active";
                     return currentValue;
+
                 default:
                     return currentValue;
             }
         }
 
-        public void CopyWorkItems(bool isNotIncludeClosed, bool isNotIncludeRemoved)
+        public void CopyWorkItems(bool isNotIncludeClosed, bool isNotIncludeRemoved, bool isIncludeHistoryComment, bool isIncludeHistoryLink, bool isFixMultilineDescriptions)
         {
             var wi = GetSourceWorkItems(isNotIncludeClosed, isNotIncludeRemoved);
-            CopyWorkItems(wi);
+            CopyWorkItems(wi, isIncludeHistoryComment, isIncludeHistoryLink, isFixMultilineDescriptions);
         }
 
         /* Copy work items to project from work item collection */
-        public void CopyWorkItems(WorkItemCollection workItemCollection)
+
+        public void CopyWorkItems(WorkItemCollection workItemCollection, bool isIncludeHistoryComment, bool isIncludeHistoryLink, bool isFixMultilineDescriptions)
         {
             //ReadItemMap(sourceProjectName);
             int i = 1;
@@ -202,16 +202,40 @@ namespace TFSProjectMigration
                 var newWorkItem = new WorkItem(map);
 
                 CopyAllfields(sourceWorkItem, fieldMap, newWorkItem);
-                                               
+
+                
+                if (isFixMultilineDescriptions)
+                {
+                    try
+                    {
+                        if (GetField(sourceWorkItem.Fields.Cast<Field>().ToList(), "Description")
+                            .FieldDefinition.FieldType == FieldType.PlainText &&
+                            GetField(newWorkItem.Fields.Cast<Field>().ToList(), "Description")
+                            .FieldDefinition.FieldType == FieldType.Html)
+                        {
+                            FixMultilineDescriptions(newWorkItem);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+
+                    }
+                }
+
+                if (isIncludeHistoryComment)
+                {
+                    CombineHistoryToComment(sourceWorkItem, newWorkItem, isIncludeHistoryLink);
+                }
+                
+
                 if (ValidateAndTryFix(sourceWorkItem, newWorkItem))
                 {
-
                     DownloadAttachment(sourceWorkItem);
                     UploadAttachments(newWorkItem, sourceWorkItem);
                     newWorkItem.Save();
 
                     WorkItemIdMap.Map(sourceWorkItem.Id, newWorkItem.Id);
-                    
+
                     updateToLatestStatus(sourceWorkItem, newWorkItem);
                     CreateLinks(new[] { sourceWorkItem }.ToList());
                 }
@@ -225,6 +249,65 @@ namespace TFSProjectMigration
 
             CreateLinks(newItems);
         }
+
+        private Field GetField(IEnumerable<Field> fields, string name)
+        {
+            return fields.First(field => field.Name.Contains(name));
+        }
+
+        private string GetValueFromField(IEnumerable<Field> fields, string name)
+        {
+            return GetField(fields, name)?.Value.ToString();
+        }
+
+        private IEnumerable<Field> GetChangedFields(IEnumerable<Field> fields)
+        {
+            return fields.Where(field => field?.Value?.ToString() != field?.OriginalValue?.ToString());
+        }
+
+        private IEnumerable<Field> GetChangedFields(IEnumerable<Field> fields, string[] with)
+        {
+            return GetChangedFields(fields).Where(field => with.Any(e => e.Contains(field.Name)));
+        }
+
+        private IEnumerable<Field> GetChangedFieldsWithout(IEnumerable<Field> fields, string[] except)
+        {
+            return GetChangedFields(fields).Where(field => !except.Any(e => e.Contains(field.Name)));
+        }
+
+        private void CombineHistoryToComment(WorkItem sourceWorkItem, WorkItem newWorkItem, bool linkToOriginal = true)
+        {
+            // process raw data into history, reverse to get decending order (most recent on top)
+            IEnumerable<dynamic> history = sourceWorkItem.Revisions.Cast<Revision>().Reverse().ToList()
+                .Select(revision => revision.Fields.Cast<Field>().ToList()).Select(fields => new
+                {
+                    Title = $"<br>[{GetValueFromField(fields, "Changed Date")}] <b>{GetValueFromField(fields, "Changed By")}</b>",
+                    History = GetValueFromField(fields, "History"),
+                    ChangesDetail = string.Join("<br>", GetChangedFieldsWithout(fields, new []{"Changed By", "Changed Date", "History", "Description", "Repro Steps"})
+                        .Select(field => $"{field?.Name}: {field?.OriginalValue?.ToString().Replace("\n", "<br>")} -> {field?.Value?.ToString().Replace("\n", "<br>")}"))
+                });
+
+            // map history to formatted strings
+            IEnumerable<string> entries = history.Select(change => $"{change.Title}<br>{change.History}<br>{change.ChangesDetail}");
+
+
+            var headerEntries = new List<string> {"<b>Migration History</b>"};
+
+            if (linkToOriginal)
+            {
+                var tswa = sourceProject.collection.GetService<TswaHyperlinkBuilder>();
+                headerEntries.Add($"(<a href='{sourceProject.collection.Uri}/WorkItemTracking/WorkItem.aspx?artifactMoniker={sourceWorkItem.Id}'>Open Original</a>)");
+                
+            }
+
+            // finally assign changes to most to work item and
+            newWorkItem.History = string.Join("<br>", headerEntries.Concat(entries));
+        }
+
+        private void FixMultilineDescriptions(WorkItem newWorkItem)
+        {
+            newWorkItem.Description = newWorkItem.Description.Replace("\n", "<br>");
+        } 
 
         private bool ValidateAndTryFix(WorkItem sourceWorkItem, WorkItem newWorkItem)
         {
@@ -259,18 +342,17 @@ namespace TFSProjectMigration
         {
             logger.Info("Start copy work item " + sourceWorkItem.Id);
 
-
             foreach (Field field in sourceWorkItem.Fields)
-            {                
+            {
                 if (field.ReferenceName == "System.State" || field.ReferenceName == "System.Reason")
                     continue;
-                
+
                 if (!fieldMap.ContainsKey(field.FieldDefinition))
                     continue;
-              
+
                 try
                 {
-                    var mappedField = fieldMap[field.FieldDefinition];                        
+                    var mappedField = fieldMap[field.FieldDefinition];
                     if (!newWorkItem.Fields[mappedField.Name].IsEditable)
                     {
                         logger.Warn("Field readonly: " + mappedField.ReferenceName);
@@ -280,10 +362,10 @@ namespace TFSProjectMigration
                     string user;
                     if (field.ReferenceName == "System.AreaPath" || field.ReferenceName == "System.IterationPath" || field.ReferenceName == "System.TeamProject")
                     {
-                        string iterationPath = (string)field.Value;                                
+                        string iterationPath = (string)field.Value;
                         string itPathNew = targetProject.project.Name + iterationPath.Substring(sourceProject.project.Name.Length);
 
-                        newWorkItem.Fields[mappedField.Name].Value = itPathNew;                        
+                        newWorkItem.Fields[mappedField.Name].Value = itPathNew;
                     }
                     else if (field.Value is string && UsersMap.TryGetValue((string)field.Value, out user))
                     {
@@ -299,10 +381,9 @@ namespace TFSProjectMigration
                     logger.Warn("Error in setting value " + field.Name, ex);
                 }
             }
-            
         }
 
-        static class LevenshteinDistance
+        private static class LevenshteinDistance
         {
             public static int Compute(string s, string t)
             {
@@ -341,7 +422,6 @@ namespace TFSProjectMigration
             }
         }
 
-
         private Hashtable ListToTable(List<object> map)
         {
             Hashtable table = new Hashtable();
@@ -349,10 +429,13 @@ namespace TFSProjectMigration
             {
                 foreach (object[] item in map)
                 {
-                    try {
-	                    table.Add((string)item[0], (string)item[1]);
-                    } catch (Exception ex) {
-                    	logger.Error("Error in ListToTable", ex);
+                    try
+                    {
+                        table.Add((string)item[0], (string)item[1]);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Error("Error in ListToTable", ex);
                     }
                 }
             }
@@ -384,6 +467,7 @@ namespace TFSProjectMigration
         //}
 
         /* Set links between workitems */
+
         private void CreateLinks(List<WorkItem> workItemCollection)
         {
             List<int> linkedWorkItemList = new List<int>();
@@ -401,15 +485,14 @@ namespace TFSProjectMigration
                         try
                         {
                             WorkItem targetItem = sourceWorkItemStore.GetWorkItem(link.TargetId);
-                            if (WorkItemIdMap.Contains(link.TargetId)  && targetItem != null)
+                            if (WorkItemIdMap.Contains(link.TargetId) && targetItem != null)
                             {
-
                                 int targetWorkItemID = 0;
                                 if (WorkItemIdMap.Contains(link.TargetId))
                                 {
                                     targetWorkItemID = (int)WorkItemIdMap[link.TargetId];
                                 }
-                                
+
                                 //if the link is not already created(check if target id is not in list)
                                 if (!linkedWorkItemList.Contains(link.TargetId))
                                 {
@@ -433,7 +516,6 @@ namespace TFSProjectMigration
                                         logger.ErrorFormat("Error occured when crearting link for work item: {0} target item: {1}", workItem.Id, link.TargetId);
                                         logger.Error("Error detail", ex);
                                     }
-
                                 }
                             }
                             else
@@ -448,12 +530,12 @@ namespace TFSProjectMigration
                     }
                     //add the work item to list if the links are processed
                     linkedWorkItemList.Add(workItem.Id);
-
                 }
             }
         }
 
         /* Upload attachments to workitems from local folder */
+
         private void UploadAttachments(WorkItem workItem, WorkItem workItemOld)
         {
             AttachmentCollection attachmentCollection = workItemOld.Attachments;
@@ -481,9 +563,6 @@ namespace TFSProjectMigration
             }
         }
 
-
-
-
         /* write ID mapping to local file */
         //public void WriteMaptoFile(string sourceProjectName)
         //{
@@ -509,7 +588,6 @@ namespace TFSProjectMigration
 
         //}
 
-
         //Delete all workitems in project
         public void DeleteWorkItems()
         {
@@ -526,7 +604,6 @@ namespace TFSProjectMigration
             {
                 System.Diagnostics.Debug.WriteLine(error.Exception.Message);
             }
-
         }
 
         ///* Compare work item type definitions and add fields from source work item types and replace workflow */
@@ -591,7 +668,6 @@ namespace TFSProjectMigration
         //    return workItemTypeXmlTarget;
         //}
 
-
         ///*Add new Field definition to work item type */
         //private XmlDocument AddField(XmlDocument workItemTypeXml, string fieldName, string fieldRefName, string fieldType, string fieldReportable)
         //{
@@ -613,7 +689,6 @@ namespace TFSProjectMigration
         //    }
         //    return workItemTypeXml;
         //}
-
 
         //public string ReplaceWorkFlow(WorkItemTypeCollection workItemTypesSource, List<object> fieldList)
         //{
@@ -671,7 +746,6 @@ namespace TFSProjectMigration
         //    return error;
         //}
 
-
         //private object[] GetAllTransitionsForWorkItemType(XmlDocument workItemTypeXml)
         //{
         //    XmlNodeList transitionsList = workItemTypeXml.GetElementsByTagName("TRANSITION");
@@ -707,7 +781,6 @@ namespace TFSProjectMigration
         //    return new object[] { start, dest, values };
         //}
 
-
         public WorkItemCollection GetSourceWorkItems(bool IsNotIncludeClosed, bool IsNotIncludeRemoved)
         {
             return GetWorkItems(sourceProject, IsNotIncludeClosed, IsNotIncludeRemoved);
@@ -723,7 +796,6 @@ namespace TFSProjectMigration
                                                     " WHERE [System.TeamProject] = '" + project.project.Name +
                                                     "' AND [System.State] <> 'Closed' AND [System.State] <> 'Removed' ORDER BY [System.Id]");
             }
-
             else if (IsNotIncludeRemoved)
             {
                 query = string.Format(" SELECT * " +
@@ -754,7 +826,6 @@ namespace TFSProjectMigration
 
         public WorkItemTypeCollection SourceWorkItemTypes => sourceProject.project.WorkItemTypes;
 
-
         public static void DownloadAttachment(WorkItem wi)
         {
             System.Net.WebClient webClient = new System.Net.WebClient();
@@ -780,7 +851,6 @@ namespace TFSProjectMigration
                         {
                             webClient.DownloadFile(att.Uri, path + "\\" + att.Id + "_" + att.Name);
                         }
-
                     }
                     catch (Exception)
                     {

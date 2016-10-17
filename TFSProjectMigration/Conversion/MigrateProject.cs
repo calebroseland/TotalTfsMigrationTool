@@ -27,7 +27,7 @@ namespace TFSProjectMigration.Conversion
         private TfsProject targetTFS;
         internal UserMap Usermap;
 
-        public void StartMigration(bool isNotIncludeClosed, bool isNotIncludeRemoved)
+        public void StartMigration(bool isNotIncludeClosed, bool isNotIncludeRemoved, bool isIncludeHistoryComment, bool isIncludeHistoryLink, bool isFixMultilineDescriptions)
         {
             if (workItemIdMap == null)
                 throw new InvalidFieldValueException(nameof(workItemIdMap) + " is not set");
@@ -51,7 +51,7 @@ namespace TFSProjectMigration.Conversion
             mig.WorkitemTemplateMap = FieldMap;
             mig.UsersMap = Usermap;
             mig.WorkItemIdMap = workItemIdMap;
-            mig.CopyWorkItems(isNotIncludeClosed, isNotIncludeRemoved);
+            mig.CopyWorkItems(isNotIncludeClosed, isNotIncludeRemoved, isIncludeHistoryComment, isIncludeHistoryLink, isFixMultilineDescriptions);
 
             Log("Copying Test Plans...");
             TestPlanMigration tcm = new TestPlanMigration(sourceTFS, targetTFS);

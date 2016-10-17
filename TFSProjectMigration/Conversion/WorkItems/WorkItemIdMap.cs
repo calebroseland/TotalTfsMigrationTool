@@ -16,7 +16,7 @@ namespace TFSProjectMigration.Conversion.WorkItems
             {
                 foreach (var line in File.ReadLines(filename))
                 {                    
-                    var fields = line.Split('\t');
+                    var fields = line.Split('|');
                     mapping[Convert.ToInt32(fields[0])] = Convert.ToInt32(fields[1]);
                 }
             }
@@ -55,7 +55,7 @@ namespace TFSProjectMigration.Conversion.WorkItems
         internal void Map(int id1, int id2)
         {
             mapping[id1] = id2;
-            File.AppendAllText(filename, id1 + "\t" + id2 + Environment.NewLine);
+            File.AppendAllText(filename, id1 + "|" + id2 + Environment.NewLine);
         }
 
 
