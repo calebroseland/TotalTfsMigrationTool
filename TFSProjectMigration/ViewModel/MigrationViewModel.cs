@@ -64,7 +64,7 @@ namespace TFSProjectMigration
 
                 mp.workItemIdMap = new Conversion.WorkItems.WorkItemIdMap(MappingFile);
 
-                await Task.Factory.StartNew(() => mp.StartMigration(IsNotIncludeClosed, IsNotIncludeRemoved, IsIncludeHistoryComment, IsIncludeHistoryLink, IsFixMultilineDescriptions));
+                await Task.Factory.StartNew(() => mp.StartMigration(IsNotIncludeClosed, IsNotIncludeRemoved, IsIncludeHistoryComment, IsIncludeHistoryLink, ShouldFixMultilineFields));
             }
             catch (Exception ex)
             {
@@ -154,7 +154,7 @@ namespace TFSProjectMigration
             get;
             set;
         }
-        public bool IsFixMultilineDescriptions
+        public bool ShouldFixMultilineFields
         {
             get;
             set;

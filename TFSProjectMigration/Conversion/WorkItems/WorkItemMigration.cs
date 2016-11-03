@@ -178,7 +178,7 @@ namespace TFSProjectMigration
 
         /* Copy work items to project from work item collection */
 
-        public void CopyWorkItems(WorkItemCollection workItemCollection, bool isIncludeHistoryComment, bool isIncludeHistoryLink, bool isFixMultilineDescriptions)
+        public void CopyWorkItems(WorkItemCollection workItemCollection, bool isIncludeHistoryComment, bool isIncludeHistoryLink, bool shouldFixMultilineFields)
         {
             //ReadItemMap(sourceProjectName);
             int i = 1;
@@ -204,17 +204,20 @@ namespace TFSProjectMigration
                 CopyAllfields(sourceWorkItem, fieldMap, newWorkItem);
 
                 
-                if (isFixMultilineDescriptions)
+                if (shouldFixMultilineFields)
                 {
                     try
                     {
-                        if (GetField(sourceWorkItem.Fields.Cast<Field>().ToList(), "Description")
-                            .FieldDefinition.FieldType == FieldType.PlainText &&
-                            GetField(newWorkItem.Fields.Cast<Field>().ToList(), "Description")
-                            .FieldDefinition.FieldType == FieldType.Html)
+                        foreach (Field sourceField in GetFields(sourceWorkItem))
                         {
-                            FixMultilineDescriptions(newWorkItem);
+                            var targetField = GetField(GetFields(newWorkItem), sourceField.Name);
+                            if (sourceField.FieldDefinition.FieldType == FieldType.PlainText && 
+                                targetField.FieldDefinition.FieldType == FieldType.Html)
+                            {
+                                targetField.Value = FixMultilineValue((string)sourceField.Value);
+                            }
                         }
+                        
                     }
                     catch (Exception ex)
                     {
@@ -250,30 +253,20 @@ namespace TFSProjectMigration
             CreateLinks(newItems);
         }
 
-        private Field GetField(IEnumerable<Field> fields, string name)
-        {
-            return fields.First(field => field.Name.Contains(name));
-        }
+        private Field GetField(IEnumerable<Field> fields, string name) => 
+            fields.First(field => field.Name.Contains(name));
 
-        private string GetValueFromField(IEnumerable<Field> fields, string name)
-        {
-            return GetField(fields, name)?.Value.ToString();
-        }
+        private string GetValueFromField(IEnumerable<Field> fields, string name) => 
+            GetField(fields, name)?.Value.ToString();
 
-        private IEnumerable<Field> GetChangedFields(IEnumerable<Field> fields)
-        {
-            return fields.Where(field => field?.Value?.ToString() != field?.OriginalValue?.ToString());
-        }
+        private IEnumerable<Field> GetChangedFields(IEnumerable<Field> fields) => 
+            fields.Where(field => field?.Value?.ToString() != field?.OriginalValue?.ToString());
 
-        private IEnumerable<Field> GetChangedFields(IEnumerable<Field> fields, string[] with)
-        {
-            return GetChangedFields(fields).Where(field => with.Any(e => e.Contains(field.Name)));
-        }
+        private IEnumerable<Field> GetChangedFields(IEnumerable<Field> fields, string[] with) => 
+            GetChangedFields(fields).Where(field => with.Any(e => e.Contains(field.Name)));
 
-        private IEnumerable<Field> GetChangedFieldsWithout(IEnumerable<Field> fields, string[] except)
-        {
-            return GetChangedFields(fields).Where(field => !except.Any(e => e.Contains(field.Name)));
-        }
+        private IEnumerable<Field> GetChangedFieldsWithout(IEnumerable<Field> fields, string[] except) => 
+            GetChangedFields(fields).Where(field => !except.Any(e => e.Contains(field.Name)));
 
         private void CombineHistoryToComment(WorkItem sourceWorkItem, WorkItem newWorkItem, bool linkToOriginal = true)
         {
@@ -300,13 +293,18 @@ namespace TFSProjectMigration
                 
             }
 
-            // finally assign changes to most to work item and
+            // finally assign change history to comment of work item
             newWorkItem.History = string.Join("<br>", headerEntries.Concat(entries));
         }
 
-        private void FixMultilineDescriptions(WorkItem newWorkItem)
+        private List<Field> GetFields(WorkItem workItem)
         {
-            newWorkItem.Description = newWorkItem.Description.Replace("\n", "<br>");
+            return workItem.Fields.Cast<Field>().ToList();
+        }
+
+        private string FixMultilineValue(string value)
+        {
+            return value.Replace("\n", "<br>");
         } 
 
         private bool ValidateAndTryFix(WorkItem sourceWorkItem, WorkItem newWorkItem)
